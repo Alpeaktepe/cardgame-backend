@@ -1,10 +1,9 @@
 class Player {
   constructor(playerId, socketId, name = null) {
-    this.playerId = playerId;   // Persistent user ID
-    this.socketId = socketId;   // Current connection ID
-    this.name = name;
-
-    this.hand = [];
+    this.playerId = playerId;
+    this.socketId = socketId;
+    this.name     = name;
+    this.hand     = [];
     this.handType = null;
   }
 
@@ -14,15 +13,6 @@ class Player {
 
   setHandType(type) {
     this.handType = type;
-  }
-
-  updateSocketId(newSocketId) {
-    this.socketId = newSocketId;
-  }
-
-  resetForNewRound() {
-    this.hand = [];
-    this.handType = null;
   }
 }
 
