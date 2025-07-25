@@ -7,6 +7,7 @@ class PokerEngine {
     this.stage = 'preflop';
     this.currentBet = 0;
     this.turnIndex = 0;
+    this.actionsTaken = 0;
   }
 
   startGame() {
@@ -16,13 +17,16 @@ class PokerEngine {
     this.stage = 'preflop';
     this.currentBet = 0;
     this.turnIndex = 0;
+    this.actionsTaken = 0;
+    this.players.forEach(p => { p.bet = 0; p.folded = false; });
   }
 
   _initDeck() {
     const suits = ['C','D','H','S'];
     const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
     this.deck = [];
-    suits.forEach(s => ranks.forEach(r => this.deck.push(r + s)));
+    suits.forEach(suit => ranks.forEach(rank => this.deck.push({ suit, rank })));
+    // Shuffle
     for (let i = this.deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
@@ -38,37 +42,47 @@ class PokerEngine {
   }
 
   playerAction(playerId, action, amount = 0) {
-    const player = this.players.find(p => p.id === playerId);
-    if (!player || player.folded) return;
+    const player = this.players[this.turnIndex];
+    if (!player || player.id !== playerId || player.folded) return { error: 'Sıra sizde değil veya fold.' };
+
+    this.actionsTaken++;
+
     if (action === 'fold') {
       player.folded = true;
-      return { winner: this.players.find(p => !p.folded).id };
+      if (this.players.filter(p => !p.folded).length === 1) {
+        const winner = this.players.find(p => !p.folded);
+        winner.chips += this.pot;
+        return { winner: winner.id, pot: this.pot, board: this.board, reason: "everyone_folded" };
+      }
     }
     if (action === 'check') {
-      if (player.bet !== this.currentBet) throw new Error('Check için bahis eşit olmalı');
+      if (player.bet !== this.currentBet) return { error: 'Check için bahis eşit olmalı' };
     } else if (action === 'call') {
       const diff = this.currentBet - player.bet;
+      if (player.chips < diff) return { error: 'Yetersiz chip' };
       player.chips -= diff;
       player.bet += diff;
       this.pot += diff;
     } else if (action === 'bet' || action === 'raise') {
-      if (amount <= this.currentBet) throw new Error('Bahis mevcut bahisten yüksek olmalı');
+      if (amount <= this.currentBet) return { error: 'Bet/Raise mevcut bahisten yüksek olmalı' };
+      if (player.chips < amount) return { error: 'Yetersiz chip' };
       player.chips -= amount;
       player.bet += amount;
       this.pot += amount;
       this.currentBet = player.bet;
     }
-    // Sıradaki oyuncuya geç
-    this.turnIndex = (this.turnIndex + 1) % this.players.length;
+
+    this.turnIndex = this._nextPlayerIndex();
     return null;
   }
 
   advanceStage() {
-    // Aktif oyuncular bahsi eşitlemiş veya fold olmuş olmalı
-    if (this.players.filter(p => !p.folded).some(p => p.bet !== this.currentBet)) return null;
-    // Bahisleri sıfırla
+    const activeCount = this.players.filter(p => !p.folded).length;
+    if (this.actionsTaken < activeCount) return null;
+
     this.currentBet = 0;
     this.players.forEach(p => p.bet = 0);
+    this.actionsTaken = 0;
 
     if (this.stage === 'preflop') {
       this.board.push(this.deck.pop(), this.deck.pop(), this.deck.pop());
@@ -80,16 +94,25 @@ class PokerEngine {
       this.board.push(this.deck.pop());
       this.stage = 'river';
     } else if (this.stage === 'river') {
-      // Showdown
       const winner = this._determineWinner();
-      return { winner, pot: this.pot, board: this.board };
+      const pot = this.pot;
+      this.players.find(p => p.id === winner).chips += pot;
+      return { winner, pot, board: this.board, reason: "showdown" };
     }
     return null;
   }
 
+  _nextPlayerIndex() {
+    const len = this.players.length;
+    for (let i = 1; i <= len; i++) {
+      const idx = (this.turnIndex + i) % len;
+      if (!this.players[idx].folded) return idx;
+    }
+    return this.turnIndex;
+  }
+
   _determineWinner() {
     const active = this.players.filter(p => !p.folded);
-    // Basit: en yüksek id değerine göre kazanan
     return active.reduce((best, p) => p.id > best.id ? p : best).id;
   }
 

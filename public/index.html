@@ -1,102 +1,222 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Poker Lobby & Game Test</title>
+  <meta charset="UTF-8">
+  <title>Poker Test</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 1em; }
-    input, button { margin: 0 .5em .5em 0; }
-    #log { height: 300px; overflow: auto; background: #f4f4f4; padding: .5em; white-space: pre-wrap; }
+    body { font-family: sans-serif; margin:0; padding:0; box-sizing: border-box;}
+    input, button { margin:.5em; }
+    #board { font-weight:bold; font-size:1.4em; text-align:center; margin-top:1em;}
+    #log { border:1px solid #ccc; background:#f9f9f9; height:200px; overflow:auto; padding:.5em; margin: 2em auto 1em auto; max-width:500px;}
+    #turn { font-weight:bold; margin:1em auto; text-align:center;}
+    #handArea { position:fixed; left:0; right:0; bottom:0; background:#fff9; padding:18px 0 15px 0; border-top:1px solid #ccc; display:flex; flex-direction:column; align-items:center;}
+    #hand { font-weight:bold; font-size:1.2em;}
+    #chips { font-weight:bold; color: #097de3; margin-bottom: 3px; }
+    .card { display:inline-block; margin-right:5px; padding:3px 8px; border-radius:5px; background:#eee; min-width:28px; text-align:center; }
+    .S { color:black; border:1.5px solid #888; }
+    .H { color:red;   border:1.5px solid #e44; }
+    .D { color:#097de3; border:1.5px solid #097de3; }
+    .C { color:green; border:1.5px solid #093; }
+    #actionArea { display:flex; justify-content:center; align-items:center; margin-bottom:10px; }
+    #myTurnMsg { font-size:1.6em; color:#fff; background:#22a031; display:none; padding:0.2em 0.8em; border-radius:7px; box-shadow:0 1px 6px #bbb;}
   </style>
 </head>
 <body>
-  <h1>Poker Lobby & Game Test</h1>
-
-  <!-- Kullanıcı Bilgileri -->
-  <div>
-    <label>Player ID:</label>
-    <input id="playerId" value="">
-    <label>Name:</label>
-    <input id="name" value="">
+  <h1 style="text-align:center;margin:12px 0 2px 0;">Poker Test</h1>
+  <div style="display:flex; justify-content:center; align-items:center; gap:10px;">
+    <label>Player ID:</label><input id="playerId" value="P1">
+    <label>Name:</label><input id="name" value="Selge">
+    <button id="enqueue">Enqueue</button>
+    <button id="create">Create Lobby</button>
+    <input id="lobbyId" placeholder="Lobby ID">
+    <button id="join">Join Lobby</button>
   </div>
+  <div id="board">Board: -</div>
+  <div id="turn">Sıra: -</div>
+  <div id="myTurnMsg">Sıra sende!</div>
+  <div id="log"></div>
 
-  <!-- Matchmaking ve Manuel Lobi -->
-  <div>
-    <button id="btn-enqueue">Matchmaking Enqueue</button>
-    <button id="btn-create">Create Lobby</button>
-    <input id="lobbyId" placeholder="Lobby ID" style="width:200px">
-    <button id="btn-join">Join Lobby</button>
+  <div id="handArea">
+    <div id="chips">Chip: -</div>
+    <div id="hand">Elin: -</div>
+    <div id="actionArea">
+      <button id="check">Check</button>
+      <button id="call">Call</button>
+      <button id="fold">Fold</button>
+      <label>Raise:</label>
+      <input type="range" id="amount" min="10" max="1000" step="10" value="50">
+      <span id="val">50</span>₺
+      <button id="raise">Raise</button>
+    </div>
   </div>
-
-  <hr>
-
-  <!-- Oyun Aksiyonları -->
-  <div>
-    <h3>Game Actions</h3>
-    <button data-action="check">Check</button>
-    <button data-action="call">Call</button>
-    <button data-action="bet">Bet 50</button>
-    <button data-action="fold">Fold</button>
-  </div>
-
-  <h3>Log</h3>
-  <pre id="log"></pre>
-
   <script>
-    const socket = io(); // http://localhost:3000'a bağlanır
-    const logEl = document.getElementById('log');
-    function log(msg) {
-      logEl.textContent += msg + '\\n';
-      logEl.scrollTop = logEl.scrollHeight;
+    // KART OBJESİNDEN SEMBOLE
+    function cardToHtml(card) {
+      if (!card || typeof card !== "object") return '';
+      let symbol = '', cls = '';
+      switch(card.suit) {
+        case 'S': symbol = '♠'; cls = 'S'; break;
+        case 'H': symbol = '♥'; cls = 'H'; break;
+        case 'D': symbol = '♦'; cls = 'D'; break;
+        case 'C': symbol = '♣'; cls = 'C'; break;
+        default:  symbol = card.suit; cls = ''; break;
+      }
+      return `<span class="card ${cls}">${card.rank}${symbol}</span>`;
+    }
+    function cardsToHtml(cards) {
+      if (!cards || !cards.length) return '-';
+      return cards.map(cardToHtml).join('');
     }
 
-    // Gelen tüm event'leri logla
-    socket.onAny((event, data) => {
-      log(`← ${event}: ${JSON.stringify(data)}`);
-      // Lobby ID geliyorsa input'u güncelle
-      if (event === 'lobbyReady' || event === 'lobbyCreated') {
-        document.getElementById('lobbyId').value = data;
+    const socket = io();
+    const logEl = document.getElementById('log');
+    const turnEl = document.getElementById('turn');
+    const handEl = document.getElementById('hand');
+    const boardEl = document.getElementById('board');
+    const chipsEl = document.getElementById('chips');
+    const myTurnMsg = document.getElementById('myTurnMsg');
+    const playerId = document.getElementById('playerId');
+    window.currentLobbyId = null;
+
+    // ---- Butonları listeye al
+    const actionBtns = [
+      document.getElementById('check'),
+      document.getElementById('call'),
+      document.getElementById('fold'),
+      document.getElementById('raise'),
+      document.getElementById('amount')
+    ];
+
+    function write(msg) {
+      const d = document.createElement('div');
+      d.textContent = msg;
+      logEl.appendChild(d);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function getLobbyId() {
+      return document.getElementById('lobbyId').value || window.currentLobbyId;
+    }
+    function showChips(chips) {
+      chipsEl.textContent = 'Chip: ' + (chips !== undefined ? chips : '-');
+    }
+    function isMyTurn(st) {
+      return st && st.currentPlayer === playerId.value;
+    }
+    function updateHandChips(st) {
+      if (st.hand) handEl.innerHTML = 'Elin: ' + cardsToHtml(st.hand);
+      const me = (st.players||[]).find(p => p.id === playerId.value);
+      showChips(me ? me.chips : '-');
+      // Sıra bende mi? Butonlar sadece sıra bende açık
+      if (isMyTurn(st)) {
+        myTurnMsg.style.display = 'inline-block';
+        actionBtns.forEach(btn => btn.disabled = false);
+      } else {
+        myTurnMsg.style.display = 'none';
+        actionBtns.forEach(btn => btn.disabled = true);
       }
+    }
+
+    socket.on('log', data => {
+      if (data.type === 'player' || data.type === 'lobby') write(data.msg);
+    });
+    socket.on('waiting', m => write(m));
+    socket.on('lobbyCreated', id => {
+      write('Lobby Created: ' + id);
+      document.getElementById('lobbyId').value = id;
+      window.currentLobbyId = id;
+    });
+    socket.on('lobbyReady', id => {
+      write('Match Found: ' + id);
+      document.getElementById('lobbyId').value = id;
+      window.currentLobbyId = id;
     });
 
-    // Butonlara tıklama handler'ları
-    document.getElementById('btn-enqueue').onclick = () => {
-      const p = document.getElementById('playerId').value;
-      const n = document.getElementById('name').value;
-      socket.emit('enqueue', { playerId: p, name: n });
-      log(`→ enqueue: {playerId:"${p}", name:"${n}"}`);
-    };
-
-    document.getElementById('btn-create').onclick = () => {
-      const p = document.getElementById('playerId').value;
-      const n = document.getElementById('name').value;
-      socket.emit('createLobby', { playerId: p, name: n });
-      log(`→ createLobby: {playerId:"${p}", name:"${n}"}`);
-    };
-
-    document.getElementById('btn-join').onclick = () => {
-      const p = document.getElementById('playerId').value;
-      const n = document.getElementById('name').value;
-      const l = document.getElementById('lobbyId').value;
-      if (!l) return alert('Önce bir Lobby ID girin veya oluşturun!');
-      socket.emit('joinLobby', { lobbyId: l, playerId: p, name: n });
-      log(`→ joinLobby: {lobbyId:"${l}", playerId:"${p}", name:"${n}"}`);
-    };
-
-    // Game action butonları
-    document.querySelectorAll('[data-action]').forEach(btn => {
-      btn.onclick = () => {
-        const action = btn.dataset.action;
-        const l = document.getElementById('lobbyId').value;
-        const p = document.getElementById('playerId').value;
-        if (!l) return alert('Önce Lobby ID girin veya matchmaking ile alın!');
-        const payload = { lobbyId: l, playerId: p, action };
-        if (action === 'bet') payload.amount = 50;
-        socket.emit('playerAction', payload);
-        log(`→ playerAction: ${JSON.stringify(payload)}`);
-      };
+    socket.on('gameStarted', st => {
+      write(`Oyun Başladı | Sıra: ${st.currentPlayer}`);
+      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
+      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
+      updateHandChips(st);
     });
+    socket.on('gameState', st => {
+      write(`Stage: ${st.stage} | Board: [${st.board.map(card => card.rank + card.suit).join(', ')}] | Pot: ${st.pot}`);
+      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
+      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
+      updateHandChips(st);
+    });
+
+    // KAZANAN MESAJI HER İKİ OYUNCUYA DA
+    socket.on('handResult', r => {
+      let msg = '';
+      if (r.reason === 'everyone_folded') {
+        msg = `Hand Winner (everyone folded): ${r.winner}`;
+      } else if (r.reason === 'showdown') {
+        msg = `Hand Winner (showdown): ${r.winner}`;
+      } else {
+        msg = `Hand Winner: ${r.winner}`;
+      }
+      write(msg);
+      if (r.board) boardEl.innerHTML = 'Board: ' + cardsToHtml(r.board);
+    });
+
+    socket.on('newHand', st => {
+      write(`Yeni El | Sıra: ${st.currentPlayer}`);
+      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
+      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
+      updateHandChips(st);
+    });
+    socket.on('gameOver', d => {
+      write(`Oyun Bitti | Kazanan: ${d.winner}`);
+      myTurnMsg.style.display = 'none';
+      actionBtns.forEach(btn => btn.disabled = true);
+    });
+
+    document.getElementById('enqueue').onclick = () => {
+      socket.emit('enqueue',{playerId:playerId.value,name:document.getElementById('name').value});
+    };
+    document.getElementById('create').onclick = () => {
+      socket.emit('createLobby',{playerId:playerId.value,name:document.getElementById('name').value});
+    };
+    document.getElementById('join').onclick = () => {
+      socket.emit('joinLobby',{
+        lobbyId:document.getElementById('lobbyId').value,
+        playerId:playerId.value,
+        name:document.getElementById('name').value
+      });
+      window.currentLobbyId = document.getElementById('lobbyId').value;
+    };
+
+    document.getElementById('check').onclick = () => {
+      socket.emit('playerAction',{
+        lobbyId: getLobbyId(),
+        playerId: playerId.value,
+        action: 'check'
+      });
+    };
+    document.getElementById('call').onclick = () => {
+      socket.emit('playerAction',{
+        lobbyId: getLobbyId(),
+        playerId: playerId.value,
+        action: 'call'
+      });
+    };
+    document.getElementById('fold').onclick = () => {
+      socket.emit('playerAction',{
+        lobbyId: getLobbyId(),
+        playerId: playerId.value,
+        action: 'fold'
+      });
+    };
+    const amt = document.getElementById('amount'), val = document.getElementById('val');
+    amt.oninput = () => val.textContent = amt.value;
+    document.getElementById('raise').onclick = () => {
+      socket.emit('playerAction',{
+        lobbyId: getLobbyId(),
+        playerId: playerId.value,
+        action: 'raise',
+        amount: +amt.value
+      });
+    };
   </script>
 </body>
 </html>

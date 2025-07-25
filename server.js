@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http    = require('http');
 const { Server } = require('socket.io');
@@ -7,29 +6,19 @@ const PokerEngine  = require('./src/core/pokerEngine');
 
 const app    = express();
 app.use(express.static('public'));
-
 const server = http.createServer(app);
 const io     = new Server(server, { cors: { origin: '*' } });
 
-// Map<lobbyId, PokerEngine>
 const engines = new Map();
 
 io.on('connection', socket => {
-  console.log('Connection:', socket.id);
-
-  // ---------- MATCHMAKING: enqueue ----------
   socket.on('enqueue', ({ playerId, name }) => {
     const lobby = lobbyManager.enqueue(playerId, socket.id, name);
-    console.log('ENQUEUE:', playerId, '→ Lobby:', lobby?.lobbyId);
-
     if (lobby) {
-      // Join players to room
       lobby.players.forEach(p => socket.join(lobby.lobbyId));
-      // Notify lobbyReady privately
       lobby.players.forEach(p => {
         io.to(p.socketId).emit('lobbyReady', lobby.lobbyId);
       });
-      // Auto-start game engine
       const engine = new PokerEngine(lobby.getPlayerList());
       engines.set(lobby.lobbyId, engine);
       engine.startGame();
@@ -39,14 +28,12 @@ io.on('connection', socket => {
     }
   });
 
-  // ---------- CREATE LOBBY ----------
   socket.on('createLobby', ({ playerId, name }) => {
     const lobby = lobbyManager.createLobby(playerId, socket.id, name);
     socket.join(lobby.lobbyId);
     socket.emit('lobbyCreated', lobby.lobbyId);
   });
 
-  // ---------- JOIN LOBBY ----------
   socket.on('joinLobby', ({ lobbyId, playerId, name }) => {
     const lobby = lobbyManager.joinLobby(lobbyId, playerId, socket.id, name);
     socket.join(lobbyId);
@@ -59,7 +46,6 @@ io.on('connection', socket => {
     }
   });
 
-  // ---------- PLAYER ACTION ----------
   socket.on('playerAction', ({ lobbyId, playerId, action, amount }) => {
     const engine = engines.get(lobbyId);
     if (!engine) return;
@@ -78,7 +64,6 @@ io.on('connection', socket => {
     }
   });
 
-  // ---------- DISCONNECT ----------
   socket.on('disconnect', () => {
     const lobby = lobbyManager.findLobbyBySocket(socket.id);
     if (!lobby) return;
@@ -91,7 +76,6 @@ io.on('connection', socket => {
   });
 });
 
-// Send gameStarted to each player with private hand
 function sendGameStarted(lobbyId) {
   const engine = engines.get(lobbyId);
   const state = engine.getGameState();
@@ -102,7 +86,6 @@ function sendGameStarted(lobbyId) {
   });
 }
 
-// Send updated gameState to each player with private hand
 function sendGameState(lobbyId) {
   const engine = engines.get(lobbyId);
   const state = engine.getGameState();
@@ -113,7 +96,6 @@ function sendGameState(lobbyId) {
   });
 }
 
-// Continue or end game logic
 function continueOrEnd(lobbyId) {
   const engine = engines.get(lobbyId);
   const lobby = lobbyManager.lobbies.get(lobbyId);
