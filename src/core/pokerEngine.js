@@ -22,11 +22,11 @@ class PokerEngine {
   }
 
   _initDeck() {
-    const suits = ['C','D','H','S'];
-    const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    const suits = ['Club','Diamond','Heart','Spade'];
+    const ranks = ['Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Jack','Queen','King','Ace'];
     this.deck = [];
     suits.forEach(suit => ranks.forEach(rank => this.deck.push({ suit, rank })));
-    // Shuffle
+    
     for (let i = this.deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
