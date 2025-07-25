@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Poker Lobby & Game Test</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 1em; }
+    input, button { margin: 0 .5em .5em 0; }
+    #log { height: 300px; overflow: auto; background: #f4f4f4; padding: .5em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Poker Lobby & Game Test</h1>
+
+  <!-- Kullanıcı Bilgileri -->
+  <div>
+    <label>Player ID:</label>
+    <input id="playerId" value="">
+    <label>Name:</label>
+    <input id="name" value="">
+  </div>
+
+  <!-- Matchmaking ve Manuel Lobi -->
+  <div>
+    <button id="btn-enqueue">Matchmaking Enqueue</button>
+    <button id="btn-create">Create Lobby</button>
+    <input id="lobbyId" placeholder="Lobby ID" style="width:200px">
+    <button id="btn-join">Join Lobby</button>
+  </div>
+
+  <hr>
+
+  <!-- Oyun Aksiyonları -->
+  <div>
+    <h3>Game Actions</h3>
+    <button data-action="check">Check</button>
+    <button data-action="call">Call</button>
+    <button data-action="bet">Bet 50</button>
+    <button data-action="fold">Fold</button>
+  </div>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <script>
+    const socket = io(); // http://localhost:3000'a bağlanır
+    const logEl = document.getElementById('log');
+    function log(msg) {
+      logEl.textContent += msg + '\\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Gelen tüm event'leri logla
+    socket.onAny((event, data) => {
+      log(`← ${event}: ${JSON.stringify(data)}`);
+      // Lobby ID geliyorsa input'u güncelle
+      if (event === 'lobbyReady' || event === 'lobbyCreated') {
+        document.getElementById('lobbyId').value = data;
+      }
+    });
+
+    // Butonlara tıklama handler'ları
+    document.getElementById('btn-enqueue').onclick = () => {
+      const p = document.getElementById('playerId').value;
+      const n = document.getElementById('name').value;
+      socket.emit('enqueue', { playerId: p, name: n });
+      log(`→ enqueue: {playerId:"${p}", name:"${n}"}`);
+    };
+
+    document.getElementById('btn-create').onclick = () => {
+      const p = document.getElementById('playerId').value;
+      const n = document.getElementById('name').value;
+      socket.emit('createLobby', { playerId: p, name: n });
+      log(`→ createLobby: {playerId:"${p}", name:"${n}"}`);
+    };
+
+    document.getElementById('btn-join').onclick = () => {
+      const p = document.getElementById('playerId').value;
+      const n = document.getElementById('name').value;
+      const l = document.getElementById('lobbyId').value;
+      if (!l) return alert('Önce bir Lobby ID girin veya oluşturun!');
+      socket.emit('joinLobby', { lobbyId: l, playerId: p, name: n });
+      log(`→ joinLobby: {lobbyId:"${l}", playerId:"${p}", name:"${n}"}`);
+    };
+
+    // Game action butonları
+    document.querySelectorAll('[data-action]').forEach(btn => {
+      btn.onclick = () => {
+        const action = btn.dataset.action;
+        const l = document.getElementById('lobbyId').value;
+        const p = document.getElementById('playerId').value;
+        if (!l) return alert('Önce Lobby ID girin veya matchmaking ile alın!');
+        const payload = { lobbyId: l, playerId: p, action };
+        if (action === 'bet') payload.amount = 50;
+        socket.emit('playerAction', payload);
+        log(`→ playerAction: ${JSON.stringify(payload)}`);
+      };
+    });
+  </script>
+</body>
+</html>
