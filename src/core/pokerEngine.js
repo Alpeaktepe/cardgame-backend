@@ -197,3 +197,4 @@ class PokerEngine {
     };
   }
 }
+module.exports = PokerEngine;
