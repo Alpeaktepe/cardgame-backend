@@ -200,18 +200,21 @@ class PokerEngine {
         return { error: `Minimum raise ${this.lastRaise}` };
 
       const callAmount = this.currentBet - player.bet;
-      const totalCost = callAmount + amount;
+      const raiseAmount = amount;
+      const totalCost = callAmount + raiseAmount;
+      const newBet = this.currentBet + raiseAmount;
+
       if (totalCost > player.chips)
         return { error: 'Yetersiz chip' };
 
       player.chips -= totalCost;
-      player.bet += totalCost;
+      player.bet = newBet;
       this.pot += totalCost;
-      this.lastRaise = amount;
-      this.currentBet = player.bet;
+      this.lastRaise = raiseAmount;
+      this.currentBet = newBet;
       this.lastAggressorIndex = this.turnIndex;
       if (player.chips === 0) player.allin = true;
-      logMsg = `${player.name} ${amount} raise yaptı${player.allin ? ' (all-in)' : ''}`;
+      logMsg = `${player.name} ${raiseAmount} raise yaptı${player.allin ? ' (all-in)' : ''}`;
     }
     else {
       return { error: 'Geçersiz aksiyon' };
