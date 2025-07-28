@@ -48,6 +48,7 @@
     <label>Oyuncu ID:</label>
     <input id="playerId" placeholder="pkr123" maxlength="12">
     <button id="enqueue">Rastgele VS</button>
+    <button id="createLobby">Lobi Oluştur</button>
     <input id="lobbyId" placeholder="Lobby ID">
     <button id="join">Lobiye Katıl</button>
   </div>
@@ -276,6 +277,12 @@
       name:nameEl.value.trim()
     });
     window.currentLobbyId = document.getElementById('lobbyId').value;
+  };
+  document.getElementById('createLobby').onclick = () => {
+    socket.emit('createLobby', {
+      playerId: playerIdEl.value.trim(),
+      name: nameEl.value.trim()
+    });
   };
   checkBtn.onclick = () => {
     socket.emit('playerAction',{

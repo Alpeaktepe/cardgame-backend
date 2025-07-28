@@ -15,14 +15,16 @@ io.on('connection', socket => {
   socket.on('enqueue', ({ playerId, name }) => {
     const lobby = lobbyManager.enqueue(playerId, socket.id, name);
     if (lobby) {
-      lobby.players.forEach(p => socket.join(lobby.lobbyId));
+      // Her iki oyuncunun socket'ini lobiye ekle
+      lobby.players.forEach(p => io.sockets.sockets.get(p.socketId)?.join(lobby.lobbyId));
       lobby.players.forEach(p => io.to(p.socketId).emit('lobbyReady', { lobbyId: lobby.lobbyId }));
       const engine = new PokerEngine(lobby.getPlayerList());
       engines.set(lobby.lobbyId, engine);
       engine.startGame();
       sendGameStarted(lobby.lobbyId);
+      io.to(lobby.lobbyId).emit('log', { type: 'lobby', msg: 'Matchmaking tamamlandı, oyun başlıyor!' });
     } else {
-      socket.emit('waiting', 'Rakip aranıyor...');
+      io.to(socket.id).emit('waiting', 'Rakip aranıyor...');
     }
   });
 
@@ -34,7 +36,8 @@ io.on('connection', socket => {
 
   socket.on('joinLobby', ({ lobbyId, playerId, name }) => {
     const lobby = lobbyManager.joinLobby(lobbyId, playerId, socket.id, name);
-    socket.join(lobbyId);
+    // Tüm oyuncuları lobiye ekle
+    lobby.players.forEach(p => io.sockets.sockets.get(p.socketId)?.join(lobbyId));
     io.to(lobbyId).emit('lobbyUpdate', lobby.getPlayerList());
     if (lobby.isFull()) {
       const engine = new PokerEngine(lobby.getPlayerList());
