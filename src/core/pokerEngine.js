@@ -1,4 +1,4 @@
-const { bestPokerHand } = require('./pokerHandEval');
+const { bestPokerHand } = require('./PokerHandEval');
 
 class PokerEngine {
   constructor(players) {
