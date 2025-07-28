@@ -2,221 +2,320 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Poker Test</title>
+  <title>Poker VS UI</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    body { font-family: sans-serif; margin:0; padding:0; box-sizing: border-box;}
-    input, button { margin:.5em; }
-    #board { font-weight:bold; font-size:1.4em; text-align:center; margin-top:1em;}
-    #log { border:1px solid #ccc; background:#f9f9f9; height:200px; overflow:auto; padding:.5em; margin: 2em auto 1em auto; max-width:500px;}
-    #turn { font-weight:bold; margin:1em auto; text-align:center;}
-    #handArea { position:fixed; left:0; right:0; bottom:0; background:#fff9; padding:18px 0 15px 0; border-top:1px solid #ccc; display:flex; flex-direction:column; align-items:center;}
-    #hand { font-weight:bold; font-size:1.2em;}
-    #chips { font-weight:bold; color: #097de3; margin-bottom: 3px; }
-    .card { display:inline-block; margin-right:5px; padding:3px 8px; border-radius:5px; background:#eee; min-width:28px; text-align:center; }
-    .S { color:black; border:1.5px solid #888; }
-    .H { color:red;   border:1.5px solid #e44; }
-    .D { color:#097de3; border:1.5px solid #097de3; }
-    .C { color:green; border:1.5px solid #093; }
-    #actionArea { display:flex; justify-content:center; align-items:center; margin-bottom:10px; }
-    #myTurnMsg { font-size:1.6em; color:#fff; background:#22a031; display:none; padding:0.2em 0.8em; border-radius:7px; box-shadow:0 1px 6px #bbb;}
+    body { font-family: 'Segoe UI',Arial,sans-serif; background:linear-gradient(120deg,#276c7e 0%,#233d47 100%); color:#f7f7f7; margin:0; }
+    #main { max-width:850px; margin:0 auto; padding:30px 10px; }
+    h1 { text-align:center; margin-bottom:10px; letter-spacing:2px; color:#ffe18d; }
+    #joinarea {margin:24px 0;}
+    input, button { padding:7px 12px; border-radius:8px; border:1px solid #ccc; margin-right:7px; }
+    #tablewrap {background:rgba(30,33,34,0.98); border-radius:23px; padding:28px 14px 16px 14px;}
+    #players-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .player { width:36%; background:#314b5e; border-radius:14px; padding:20px 10px 10px 10px; box-shadow:0 2px 20px #1236; position:relative;}
+    .player.me { border:3px solid #ffed7b; }
+    .player .folded { opacity:0.5; text-decoration:line-through; }
+    .player .chips { font-size:1.3em; font-weight:bold; color:#92e8fd; }
+    .player .name { font-size:1.5em; font-weight:bold; margin-bottom:6px;}
+    .player .status { color:#ffdca8; font-size:1.1em;}
+    #pot { text-align:center; font-size:2em; color:#fbe287; margin-bottom:16px;}
+    #board { text-align:center; min-height:70px; margin-bottom:18px;}
+    .card { display:inline-block; margin:0 7px; padding:10px 15px; border-radius:14px; font-size:2.3em;
+      background:#fff; color:#2d2d2d; border:3.5px solid #ccc; min-width:54px; box-shadow:0 2px 7px #334a;
+      font-family:'Segoe UI',Arial,sans-serif; position:relative;}
+    .Spade   { color:black; border-color:#888;}
+    .Heart   { color:#c01828; border-color:#e44;}
+    .Diamond { color:#0093e7; border-color:#09f;}
+    .Club    { color:#248a2b; border-color:#1e7e34;}
+    .card.back { background:#123b5e; color:#123b5e; border-color:#123b5e;}
+    #actions { margin:20px 0 10px 0; text-align:center;}
+    #actions button, #actions input[type=range] { margin:0 10px; font-size:1.3em; padding:11px 28px; border-radius:9px; border:none;}
+    #actions button { background:#60e15a; color:#114d13; font-weight:bold;}
+    #actions button[disabled] { background:#333; color:#aaa; }
+    #myTurn { font-size:2em; color:#fff; background:#23a036;
+      display:none; padding:9px 36px; border-radius:14px; margin-bottom:10px; box-shadow:0 3px 16px #123b;}
+    #log { height:140px; overflow-y:auto; background:#233d47; border-radius:12px; padding:9px; margin:18px 0; font-size:1.12em;}
+    #cards { text-align:center; margin:18px 0;}
+    .youTag { background:#ffe18d; color:#293; border-radius:7px; padding:0 8px; font-size:0.9em; margin-left:5px; font-weight:bold;}
   </style>
 </head>
 <body>
-  <h1 style="text-align:center;margin:12px 0 2px 0;">Poker Test</h1>
-  <div style="display:flex; justify-content:center; align-items:center; gap:10px;">
-    <label>Player ID:</label><input id="playerId" value="">
-    <label>Name:</label><input id="name" value="">
-    <button id="enqueue">Enqueue</button>
-    <button id="create">Create Lobby</button>
+<div id="main">
+  <h1>Poker VS</h1>
+  <div id="joinarea">
+    <label>Kullanıcı Adı:</label>
+    <input id="name" placeholder="Senin adın" maxlength="16">
+    <label>Oyuncu ID:</label>
+    <input id="playerId" placeholder="pkr123" maxlength="12">
+    <button id="enqueue">Rastgele VS</button>
     <input id="lobbyId" placeholder="Lobby ID">
-    <button id="join">Join Lobby</button>
+    <button id="join">Lobiye Katıl</button>
   </div>
-  <div id="board">Board: -</div>
-  <div id="turn">Sıra: -</div>
-  <div id="myTurnMsg">Sıra sende!</div>
-  <div id="log"></div>
-
-  <div id="handArea">
-    <div id="chips">Chip: -</div>
-    <div id="hand">Elin: -</div>
-    <div id="actionArea">
+  <div id="tablewrap">
+    <div id="players-row">
+      <div id="playerA" class="player"></div>
+      <div id="playerB" class="player"></div>
+    </div>
+    <div id="pot">Pot: -</div>
+    <div id="board">Board: -</div>
+    <div id="myTurn">Sıra Sende!</div>
+    <div id="cards">Elin: -</div>
+    <div id="actions" style="display:none;">
       <button id="check">Check</button>
       <button id="call">Call</button>
       <button id="fold">Fold</button>
-      <label>Raise:</label>
+      <label>Bet/Raise:</label>
       <input type="range" id="amount" min="10" max="1000" step="10" value="50">
       <span id="val">50</span>₺
+      <button id="bet">Bet</button>
       <button id="raise">Raise</button>
     </div>
+    <div id="log"></div>
   </div>
-  <script>
-    // KART OBJESİNDEN SEMBOLE
-    function cardToHtml(card) {
-      if (!card || typeof card !== "object") return '';
-      let symbol = '', cls = '';
-      switch(card.suit) {
-        case 'S': symbol = '♠'; cls = 'S'; break;
-        case 'H': symbol = '♥'; cls = 'H'; break;
-        case 'D': symbol = '♦'; cls = 'D'; break;
-        case 'C': symbol = '♣'; cls = 'C'; break;
-        default:  symbol = card.suit; cls = ''; break;
+</div>
+<!-- ... (head ve style bölümü aynı, yukarıdan kopyala) ... -->
+<script>
+  function cardToHtml(card, hidden=false) {
+    if (!card || typeof card !== "object") return '';
+    if (hidden) return `<span class="card back">🂠</span>`;
+    let symbol = '', cls = '';
+    switch(card.suit) {
+      case 'Spade': symbol = '♠'; cls = 'Spade'; break;
+      case 'Heart': symbol = '♥'; cls = 'Heart'; break;
+      case 'Diamond': symbol = '♦'; cls = 'Diamond'; break;
+      case 'Club': symbol = '♣'; cls = 'Club'; break;
+      default:  symbol = card.suit; cls = ''; break;
+    }
+    const ranks = {
+      Two: '2', Three: '3', Four: '4', Five: '5', Six: '6', Seven: '7', Eight: '8', Nine: '9', Ten: '10',
+      Jack: 'J', Queen: 'Q', King: 'K', Ace: 'A'
+    };
+    return `<span class="card ${cls}">${ranks[card.rank] || card.rank}${symbol}</span>`;
+  }
+  function cardsToHtml(cards, hidden=false) {
+    if (!cards || !cards.length) return '-';
+    return cards.map(card => cardToHtml(card, hidden)).join('');
+  }
+
+  const socket = io();
+  const playerA = document.getElementById('playerA');
+  const playerB = document.getElementById('playerB');
+  const boardEl = document.getElementById('board');
+  const potEl   = document.getElementById('pot');
+  const cardsEl = document.getElementById('cards');
+  const myTurnEl= document.getElementById('myTurn');
+  const logEl   = document.getElementById('log');
+  const actions = document.getElementById('actions');
+  const playerIdEl = document.getElementById('playerId');
+  const nameEl = document.getElementById('name');
+  let myId = '', myName = '';
+  let playersById = {};
+  let otherId = '', otherName = '';
+  let mySeat = 0;
+
+  const amt = document.getElementById('amount');
+  const val = document.getElementById('val');
+  const checkBtn = document.getElementById('check');
+  const callBtn = document.getElementById('call');
+  const foldBtn = document.getElementById('fold');
+  const raiseBtn = document.getElementById('raise');
+  const betBtn = document.getElementById('bet');
+
+  function write(msg) {
+    const d = document.createElement('div');
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function getLobbyId() {
+    return document.getElementById('lobbyId').value || window.currentLobbyId;
+  }
+  function updatePlayers(st) {
+    if (st.players && st.players[0] && st.players[0].name) {
+      playersById = {};
+      st.players.forEach(p => playersById[p.id] = p.name);
+    }
+    myId = playerIdEl.value.trim();
+    myName = nameEl.value.trim();
+    let arr = st.players.slice();
+    mySeat = arr.findIndex(p => p.id === myId);
+    let left = arr[mySeat];
+    let right = arr[1-mySeat];
+
+    function playerBoxHtml(p, isMe) {
+      let classes = [];
+      if (st.currentPlayer === p.id) classes.push('me');
+      if (p.folded) classes.push('folded');
+      let name = (playersById[p.id] || p.id);
+      return `
+        <div class="name">${name}${isMe ? '<span class="youTag">SEN</span>' : ''}</div>
+        <div class="chips">${p.chips} Chip</div>
+        <div class="status">${p.folded ? 'Folded' : ''}</div>
+      `;
+    }
+    playerA.innerHTML = left ? playerBoxHtml(left, true) : '';
+    playerB.innerHTML = right ? playerBoxHtml(right, false) : '';
+    otherId = arr[1-mySeat]?.id || '';
+    otherName = playersById[otherId] || '';
+  }
+  function updateBoard(st) {
+    potEl.textContent = 'Pot: ' + st.pot;
+    boardEl.innerHTML = 'Board: ' + cardsToHtml(st.board);
+  }
+  function updateHand(st) {
+    let hand = [];
+    if (st.players && myId) {
+      const me = st.players.find(p => p.id === myId);
+      if (me && me.hand && me.hand.length) {
+        hand = me.hand;
+      } else if (st.hand && st.hand.length) {
+        hand = st.hand;
       }
-      return `<span class="card ${cls}">${card.rank}${symbol}</span>`;
     }
-    function cardsToHtml(cards) {
-      if (!cards || !cards.length) return '-';
-      return cards.map(cardToHtml).join('');
+    cardsEl.innerHTML = 'Elin: ' + cardsToHtml(hand);
+  }
+  function enableActions(enable) {
+    actions.style.display = enable ? 'block' : 'none';
+    checkBtn.disabled = callBtn.disabled = foldBtn.disabled = raiseBtn.disabled = !enable;
+    amt.disabled = !enable;
+    myTurnEl.style.display = enable ? 'inline-block' : 'none';
+  }
+  function updateRaiseControls(st) {
+    const me = st.players.find(p => p.id === myId);
+    let minRaise = 10, maxRaise = me ? me.chips + me.bet : 1000;
+    if (st.currentBet > 0) {
+      minRaise = Math.max(st.currentBet + (st.lastRaise || st.currentBet), st.currentBet + (st.currentBet - (me?.bet || 0)));
     }
+    if (me && minRaise > me.chips + me.bet) minRaise = me.chips + me.bet;
+    if (me && maxRaise > me.chips + me.bet) maxRaise = me.chips + me.bet;
+    amt.min = minRaise;
+    amt.max = maxRaise;
+    amt.step = 10;
+    if (+amt.value < minRaise) amt.value = minRaise;
+    if (+amt.value > maxRaise) amt.value = maxRaise;
+    val.textContent = amt.value;
+    raiseBtn.disabled = (!me || me.folded || st.currentPlayer !== myId || minRaise > maxRaise);
+  }
+  function renderState(st) {
+    updatePlayers(st);
+    updateBoard(st);
+    updateHand(st);
 
-    const socket = io();
-    const logEl = document.getElementById('log');
-    const turnEl = document.getElementById('turn');
-    const handEl = document.getElementById('hand');
-    const boardEl = document.getElementById('board');
-    const chipsEl = document.getElementById('chips');
-    const myTurnMsg = document.getElementById('myTurnMsg');
-    const playerId = document.getElementById('playerId');
-    window.currentLobbyId = null;
+    let me = st.players.find(p => p.id === myId);
+    let myTurn = st.currentPlayer === myId && me && !me.folded && !me.allin;
 
-    // ---- Butonları listeye al
-    const actionBtns = [
-      document.getElementById('check'),
-      document.getElementById('call'),
-      document.getElementById('fold'),
-      document.getElementById('raise'),
-      document.getElementById('amount')
-    ];
+    enableActions(myTurn);
 
-    function write(msg) {
-      const d = document.createElement('div');
-      d.textContent = msg;
-      logEl.appendChild(d);
-      logEl.scrollTop = logEl.scrollHeight;
+    if (myTurn) {
+      updateRaiseControls(st);
+      // Bet: sadece pot açılmadıysa (currentBet == 0)
+      betBtn.style.display = (st.currentBet === 0) ? 'inline-block' : 'none';
+      raiseBtn.style.display = (st.currentBet > 0) ? 'inline-block' : 'none';
+      checkBtn.disabled = !(me && me.bet === st.currentBet);
+      callBtn.disabled  = !(me && me.bet < st.currentBet && me.chips > 0);
+      betBtn.disabled   = !(me && st.currentBet === 0 && +amt.value > 0 && +amt.value <= me.chips);
+      raiseBtn.disabled = !(me && st.currentBet > 0 && +amt.value >= st.lastRaise && +amt.value <= me.chips);
+    } else {
+      checkBtn.disabled = callBtn.disabled = betBtn.disabled = raiseBtn.disabled = true;
+      betBtn.style.display = 'none';
+      raiseBtn.style.display = 'none';
     }
-    function getLobbyId() {
-      return document.getElementById('lobbyId').value || window.currentLobbyId;
-    }
-    function showChips(chips) {
-      chipsEl.textContent = 'Chip: ' + (chips !== undefined ? chips : '-');
-    }
-    function isMyTurn(st) {
-      return st && st.currentPlayer === playerId.value;
-    }
-    function updateHandChips(st) {
-      if (st.hand) handEl.innerHTML = 'Elin: ' + cardsToHtml(st.hand);
-      const me = (st.players||[]).find(p => p.id === playerId.value);
-      showChips(me ? me.chips : '-');
-      // Sıra bende mi? Butonlar sadece sıra bende açık
-      if (isMyTurn(st)) {
-        myTurnMsg.style.display = 'inline-block';
-        actionBtns.forEach(btn => btn.disabled = false);
-      } else {
-        myTurnMsg.style.display = 'none';
-        actionBtns.forEach(btn => btn.disabled = true);
-      }
-    }
+  }
 
-    socket.on('log', data => {
-      if (data.type === 'player' || data.type === 'lobby') write(data.msg);
-    });
-    socket.on('waiting', m => write(m));
-    socket.on('lobbyCreated', id => {
-      write('Lobby Created: ' + id);
-      document.getElementById('lobbyId').value = id;
-      window.currentLobbyId = id;
-    });
-    socket.on('lobbyReady', id => {
-      write('Match Found: ' + id);
-      document.getElementById('lobbyId').value = id;
-      window.currentLobbyId = id;
-    });
+  socket.on('log', data => { if (data?.msg) write(data.msg); });
+  socket.on('waiting', m => write(m));
+  socket.on('lobbyCreated', id => {
+    write('Lobby Created: ' + id);
+    document.getElementById('lobbyId').value = id;
+    window.currentLobbyId = id;
+  });
+  socket.on('lobbyReady', data => {
+    write('Match Found: ' + (data.lobbyId || data));
+    document.getElementById('lobbyId').value = data.lobbyId || data;
+    window.currentLobbyId = data.lobbyId || data;
+  });
+  socket.on('gameStarted', st => { renderState(st); });
+  socket.on('gameState', st => { renderState(st); });
+  socket.on('handResult', r => {
+    let msg = '';
+    if (r.reason === 'everyone_folded')
+      msg = `Kazanan (diğerleri fold): ${playersById[r.winner] || r.winner}`;
+    else if (r.reason === 'showdown')
+      msg = `Kazanan (showdown): ${playersById[r.winner] || r.winner}`;
+    else
+      msg = `Kazanan: ${playersById[r.winner] || r.winner}`;
+    write(msg);
+    if (r.board) boardEl.innerHTML = 'Board: ' + cardsToHtml(r.board);
 
-    socket.on('gameStarted', st => {
-      write(`Oyun Başladı | Sıra: ${st.currentPlayer}`);
-      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
-      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
-      updateHandChips(st);
-    });
-    socket.on('gameState', st => {
-      write(`Stage: ${st.stage} | Board: [${st.board.map(card => card.rank + card.suit).join(', ')}] | Pot: ${st.pot}`);
-      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
-      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
-      updateHandChips(st);
-    });
-
-    // KAZANAN MESAJI HER İKİ OYUNCUYA DA
-    socket.on('handResult', r => {
-      let msg = '';
-      if (r.reason === 'everyone_folded') {
-        msg = `Hand Winner (everyone folded): ${r.winner}`;
-      } else if (r.reason === 'showdown') {
-        msg = `Hand Winner (showdown): ${r.winner}`;
-      } else {
-        msg = `Hand Winner: ${r.winner}`;
-      }
-      write(msg);
-      if (r.board) boardEl.innerHTML = 'Board: ' + cardsToHtml(r.board);
-    });
-
-    socket.on('newHand', st => {
-      write(`Yeni El | Sıra: ${st.currentPlayer}`);
-      turnEl.textContent = 'Sıra: ' + st.currentPlayer;
-      boardEl.innerHTML = 'Board: ' + (st.board && st.board.length ? cardsToHtml(st.board) : '-');
-      updateHandChips(st);
-    });
-    socket.on('gameOver', d => {
-      write(`Oyun Bitti | Kazanan: ${d.winner}`);
-      myTurnMsg.style.display = 'none';
-      actionBtns.forEach(btn => btn.disabled = true);
-    });
-
-    document.getElementById('enqueue').onclick = () => {
-      socket.emit('enqueue',{playerId:playerId.value,name:document.getElementById('name').value});
-    };
-    document.getElementById('create').onclick = () => {
-      socket.emit('createLobby',{playerId:playerId.value,name:document.getElementById('name').value});
-    };
-    document.getElementById('join').onclick = () => {
-      socket.emit('joinLobby',{
-        lobbyId:document.getElementById('lobbyId').value,
-        playerId:playerId.value,
-        name:document.getElementById('name').value
+    // Showdown ellerini göster
+    if (r.showdownHands && r.showdownHands.length) {
+      let handsHtml = '<b>Showdown:</b><br>';
+      r.showdownHands.forEach(p => {
+        handsHtml += `<b>${playersById[p.id] || p.name || p.id}:</b> ${cardsToHtml(p.hand)}<br>`;
       });
-      window.currentLobbyId = document.getElementById('lobbyId').value;
-    };
+      boardEl.innerHTML += '<br>' + handsHtml;
+    }
 
-    document.getElementById('check').onclick = () => {
-      socket.emit('playerAction',{
-        lobbyId: getLobbyId(),
-        playerId: playerId.value,
-        action: 'check'
-      });
-    };
-    document.getElementById('call').onclick = () => {
-      socket.emit('playerAction',{
-        lobbyId: getLobbyId(),
-        playerId: playerId.value,
-        action: 'call'
-      });
-    };
-    document.getElementById('fold').onclick = () => {
-      socket.emit('playerAction',{
-        lobbyId: getLobbyId(),
-        playerId: playerId.value,
-        action: 'fold'
-      });
-    };
-    const amt = document.getElementById('amount'), val = document.getElementById('val');
-    amt.oninput = () => val.textContent = amt.value;
-    document.getElementById('raise').onclick = () => {
-      socket.emit('playerAction',{
-        lobbyId: getLobbyId(),
-        playerId: playerId.value,
-        action: 'raise',
-        amount: +amt.value
-      });
-    };
-  </script>
+    enableActions(false);
+  });
+  socket.on('gameOver', d => {
+    write(`Oyun Bitti | Kazanan: ${playersById[d.winner] || d.winner}`);
+    enableActions(false);
+  });
+
+  document.getElementById('enqueue').onclick = () => {
+    socket.emit('enqueue',{
+      playerId:playerIdEl.value.trim(),
+      name:nameEl.value.trim()
+    });
+  };
+  document.getElementById('join').onclick = () => {
+    socket.emit('joinLobby',{
+      lobbyId:document.getElementById('lobbyId').value,
+      playerId:playerIdEl.value.trim(),
+      name:nameEl.value.trim()
+    });
+    window.currentLobbyId = document.getElementById('lobbyId').value;
+  };
+  checkBtn.onclick = () => {
+    socket.emit('playerAction',{
+      lobbyId: getLobbyId(),
+      playerId: playerIdEl.value.trim(),
+      action: 'check'
+    });
+  };
+  callBtn.onclick = () => {
+    socket.emit('playerAction',{
+      lobbyId: getLobbyId(),
+      playerId: playerIdEl.value.trim(),
+      action: 'call'
+    });
+  };
+  foldBtn.onclick = () => {
+    socket.emit('playerAction',{
+      lobbyId: getLobbyId(),
+      playerId: playerIdEl.value.trim(),
+      action: 'fold'
+    });
+  };
+  amt.oninput = () => { val.textContent = amt.value; };
+  betBtn.onclick = () => {
+    socket.emit('playerAction', {
+      lobbyId: getLobbyId(),
+      playerId: playerIdEl.value.trim(),
+      action: 'bet',
+      amount: +amt.value
+    });
+  };
+  raiseBtn.onclick = () => {
+    socket.emit('playerAction', {
+      lobbyId: getLobbyId(),
+      playerId: playerIdEl.value.trim(),
+      action: 'raise',
+      amount: +amt.value
+    });
+  };
+</script>
+
 </body>
 </html>

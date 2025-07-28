@@ -11,37 +11,12 @@ const io     = new Server(server, { cors: { origin: '*' } });
 
 const engines = new Map();
 
-// --- Autofold için: düzenli intervalde check
-setInterval(() => {
-  for (const [lobbyId, engine] of engines.entries()) {
-    const result = engine.checkAutoFold();
-    if (result && result.autoFold) {
-      io.to(lobbyId).emit('log', { type: 'lobby', msg: `Oyuncu ${result.autoFold} hamle süresini aştı ve otomatik fold oldu.` });
-      const early = engine.playerAction(result.autoFold, 'fold');
-      if (early?.winner) {
-        io.to(lobbyId).emit('handResult', early);
-        continueOrEnd(lobbyId);
-        return;
-      }
-      const adv = engine.advanceStage();
-      if (adv?.winner) {
-        io.to(lobbyId).emit('handResult', adv);
-        continueOrEnd(lobbyId);
-      } else {
-        sendGameState(lobbyId);
-      }
-    }
-  }
-}, 2000); // 2 saniyede bir kontrol
-
 io.on('connection', socket => {
   socket.on('enqueue', ({ playerId, name }) => {
     const lobby = lobbyManager.enqueue(playerId, socket.id, name);
     if (lobby) {
       lobby.players.forEach(p => socket.join(lobby.lobbyId));
-      lobby.players.forEach(p => {
-        io.to(p.socketId).emit('lobbyReady', { lobbyId: lobby.lobbyId});
-      });
+      lobby.players.forEach(p => io.to(p.socketId).emit('lobbyReady', { lobbyId: lobby.lobbyId }));
       const engine = new PokerEngine(lobby.getPlayerList());
       engines.set(lobby.lobbyId, engine);
       engine.startGame();
@@ -72,27 +47,30 @@ io.on('connection', socket => {
   socket.on('playerAction', ({ lobbyId, playerId, action, amount }) => {
     const engine = engines.get(lobbyId);
     if (!engine) return;
-    const early = engine.playerAction(playerId, action, amount);
-    if (early?.error) {
-      io.to(socket.id).emit('log', { type: 'player', msg: early.error });
+    const player = engine.players.find(p => p.id === playerId);
+
+    // Herkese hareketi logla
+    io.to(lobbyId).emit('log', {
+      type: 'player',
+      msg: `${player?.name || playerId}: ${action}${amount ? ' ' + amount : ''}`
+    });
+
+    const result = engine.playerAction(playerId, action, amount);
+    if (result?.error) {
+      io.to(socket.id).emit('log', { type: 'player', msg: result.error });
       return;
     }
-    if (early?.winner) {
-      io.to(lobbyId).emit('handResult', early);
+    if (result?.winner) {
+      io.to(lobbyId).emit('handResult', result);
+      io.to(lobbyId).emit('log', { type: 'player', msg: `El bitti! Kazanan: ${engine.players.find(p=>p.id===result.winner)?.name || result.winner}` });
       continueOrEnd(lobbyId);
       return;
     }
-    const adv = engine.advanceStage();
-    if (adv?.winner) {
-      io.to(lobbyId).emit('handResult', adv);
-      continueOrEnd(lobbyId);
-      return;
+    if (result?.stageAdvanced) {
+      io.to(lobbyId).emit('log', { type: 'lobby', msg: `Stage: ${engine.stage} - Yeni kart açıldı!` });
     }
-    if (adv?.stageAdvanced) {
-      io.to(lobbyId).emit('log', { type: 'lobby', msg: `Tüm oyuncular check yaptı, sonraki stage başladı.` });
-    }
-    if (adv?.resetChecked) {
-      io.to(lobbyId).emit('log', { type: 'lobby', msg: `Bir oyuncu check yapmadı, bahis turu devam ediyor.` });
+    if (result?.log) {
+      io.to(lobbyId).emit('log', { type: 'player', msg: result.log });
     }
     sendGameState(lobbyId);
   });
@@ -111,20 +89,18 @@ io.on('connection', socket => {
 
 function sendGameStarted(lobbyId) {
   const engine = engines.get(lobbyId);
-  const state = engine.getGameState();
   const lobby = lobbyManager.lobbies.get(lobbyId);
   lobby.players.forEach(p => {
-    const playerState = { ...state, hand: engine.players.find(pl => pl.id === p.playerId).hand };
+    const playerState = engine.getGameState(p.playerId || p.id);
     io.to(p.socketId).emit('gameStarted', playerState);
   });
 }
 
 function sendGameState(lobbyId) {
   const engine = engines.get(lobbyId);
-  const state = engine.getGameState();
   const lobby = lobbyManager.lobbies.get(lobbyId);
   lobby.players.forEach(p => {
-    const playerState = { ...state, hand: engine.players.find(pl => pl.id === p.playerId).hand };
+    const playerState = engine.getGameState(p.playerId || p.id);
     io.to(p.socketId).emit('gameState', playerState);
   });
 }
@@ -132,13 +108,16 @@ function sendGameState(lobbyId) {
 function continueOrEnd(lobbyId) {
   const engine = engines.get(lobbyId);
   const lobby = lobbyManager.lobbies.get(lobbyId);
-  const active = engine.players.filter(p => !p.folded && p.chips > 0);
-  if (active.length < 2) {
-    io.to(lobbyId).emit('gameOver', { winner: active[0]?.id });
+  const finished = engine.players.filter(p => p.chips > 0);
+  if (finished.length < 2) {
+    io.to(lobbyId).emit('gameOver', { winner: finished[0]?.id });
+    io.to(lobbyId).emit('log', { type: 'lobby', msg: `Oyun Bitti! Kazanan: ${finished[0]?.name || finished[0]?.id}` });
     lobbyManager.removeLobby(lobbyId);
     engines.delete(lobbyId);
   } else {
+    // Sıfırlanmamış iki kişi varsa yeni el başlat!
     engine.startGame();
+    io.to(lobbyId).emit('log', { type: 'lobby', msg: `Yeni el başlıyor...` });
     sendGameState(lobbyId);
   }
 }
