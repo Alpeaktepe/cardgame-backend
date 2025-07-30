@@ -174,8 +174,9 @@
     "yocto-queue": "^0.1.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "start": "node server.js"
+    
   },
   "repository": {
     "type": "git",
@@ -188,5 +189,8 @@
     "url": "https://github.com/Alpeaktepe/cardgame-backend/issues"
   },
   "homepage": "https://github.com/Alpeaktepe/cardgame-backend#readme",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "jest": "^30.0.5"
+  }
 }

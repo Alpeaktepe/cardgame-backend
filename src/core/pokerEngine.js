@@ -1,4 +1,4 @@
-const { bestPokerHand } = require('./PokerHandEval');
+const { bestPokerHand } = require('./pokerHandEval');
 
 class PokerEngine {
   constructor(players) {
@@ -22,12 +22,15 @@ class PokerEngine {
     this.stage = 'prebet';
     this.lastAggressorIndex = null;
     this.actionOrder = [];
+    this.handCount = 0;
+    this._playersActedThisRound = new Set();
   }
 
   startGame() {
     this._initDeck();
     this._resetForNewRound();
     this._dealHands();
+    this.handCount++;
   }
 
   _resetForNewRound() {
@@ -39,7 +42,7 @@ class PokerEngine {
     this.turnIndex = 0;
     this.lastAggressorIndex = null;
     this.actionOrder = [];
-
+    this._playersActedThisRound = new Set();
     this.players.forEach(p => {
       p.bet = 0;
       p.folded = false;
@@ -48,18 +51,25 @@ class PokerEngine {
     });
   }
 
+  _resetPlayerBets() {
+    this.players.forEach(player => player.bet = 0);
+    this.currentBet = 0;
+    this.lastRaise = 0;
+    this.lastAggressorIndex = null;
+    this.actionOrder = [];
+    this._playersActedThisRound = new Set();
+  }
+
   _initDeck() {
     const suits = ['Club', 'Diamond', 'Heart', 'Spade'];
     const ranks = [
       'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
       'Ten', 'Jack', 'Queen', 'King', 'Ace'
     ];
-
     this.deck = [];
     suits.forEach(suit =>
       ranks.forEach(rank => this.deck.push({ suit, rank }))
     );
-
     for (let i = this.deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
@@ -77,12 +87,29 @@ class PokerEngine {
     for (let i = 1; i <= len; i++) {
       const idx = (curr + i) % len;
       const player = this.players[idx];
-
       if (!player.folded && player.chips > 0) {
         return idx;
       }
     }
     return curr;
+  }
+
+  _findFirstActivePlayerIndex() {
+    // All-in olmayan ilk aktif oyuncuyu bul (0'dan başlayarak)
+    for (let i = 0; i < this.players.length; i++) {
+      if (!this.players[i].folded && !this.players[i].allin && this.players[i].chips > 0) {
+        return i;
+      }
+    }
+    
+    // Tüm oyuncular all-in/fold ise, indeks 1'i (p2) döndür
+    if (this.players.every(p => p.allin || p.folded)) {
+      return 1;
+    }
+    
+    // Bu noktada p1 kesinlikle all-in veya fold olmalı, o yüzden p2'den başla
+    // İndeks 1 (p2) direkt döndür - poker kuralları gereği
+    return 1;
   }
 
   _inHand() {
@@ -91,41 +118,38 @@ class PokerEngine {
 
   _isBettingRoundOver() {
     const activePlayers = this.players.filter(p => !p.folded);
-    const canActPlayers = this.players.filter(p => !p.folded && p.chips > 0);
-
+    
+    // Only one player left - round over
     if (activePlayers.length <= 1) return true;
-
-    const allBetsEqual = activePlayers.every(p => p.bet === this.currentBet);
+    
+    // Get players who can still act (not all-in, have chips)
+    const canAct = activePlayers.filter(p => !p.allin && p.chips > 0);
+    
+    // No one can act - round over
+    if (canAct.length === 0) return true;
+    
+    // Check if all active players have equal bets
+    const firstActiveBet = activePlayers[0].bet;
+    const allBetsEqual = activePlayers.every(p => p.bet === firstActiveBet || p.allin);
+    
     if (!allBetsEqual) return false;
-
-    if (canActPlayers.length === 0) return true;
-
-    if (canActPlayers.length === 2) {
-      if (this.currentBet > 0) return true;
-
-      const acted = new Set(this.actionOrder);
-      if (acted.size >= 2) return true;
-      return false;
+    
+    // If only one player can act and their bet matches current bet, round over
+    if (canAct.length === 1) {
+      return canAct[0].bet === this.currentBet;
     }
-
-    let lastActionIndex = -1;
-    for (let i = this.actionOrder.length - 1; i >= 0; i--) {
-      const idx = this.actionOrder[i];
-      const act = this.players[idx];
-      if (!act.folded && (act.bet === this.currentBet || act.allin)) {
-        lastActionIndex = i;
-        break;
-      }
+    
+    // All players who can act must have acted at least once this round
+    // and all bets must be equal
+    const actedCount = canAct.filter(p => this._playersActedThisRound.has(p.seat)).length;
+    
+    // For preflop or when there's no betting, everyone must act
+    if (this.currentBet === 0) {
+      return actedCount >= canAct.length;
     }
-
-    if (lastActionIndex >= 0) {
-      const actedSince = new Set(this.actionOrder.slice(lastActionIndex + 1));
-      if (actedSince.size >= canActPlayers.length - 1) {
-        return true;
-      }
-    }
-
-    return false;
+    
+    // For betting rounds, all bets must be equal and everyone acted
+    return allBetsEqual && actedCount >= canAct.length;
   }
 
   playerAction(playerId, action = '', amount = 0) {
@@ -137,11 +161,11 @@ class PokerEngine {
 
     let logMsg = '';
     this.actionOrder.push(this.turnIndex);
+    this._playersActedThisRound.add(this.turnIndex);
 
     if (action === 'fold') {
       player.folded = true;
       logMsg = `${player.name} fold yaptı`;
-
       const activePlayers = this._inHand();
       if (activePlayers.length === 1) {
         activePlayers[0].chips += this.pot;
@@ -151,7 +175,10 @@ class PokerEngine {
           pot: this.pot,
           board: this.board,
           reason: "everyone_folded",
-          log: logMsg
+          log: logMsg,
+          bets: this.players.map(p => p.bet),
+          chips: this.players.map(p => p.chips),
+          allins: this.players.map(p => p.allin)
         };
       }
     }
@@ -164,7 +191,6 @@ class PokerEngine {
       const callAmount = this.currentBet - player.bet;
       if (callAmount < 0)
         return { error: 'Call yapacak miktar yok' };
-
       if (callAmount === 0) {
         logMsg = `${player.name} check yaptı`;
       } else {
@@ -196,8 +222,9 @@ class PokerEngine {
     else if (action === 'raise') {
       if (this.currentBet === 0)
         return { error: 'Raise için önce bet olmalı' };
-      if (amount < this.lastRaise)
-        return { error: `Minimum raise ${this.lastRaise}` };
+      const minRaise = 50;
+      if (amount < minRaise)
+        return { error: `Minimum raise miktarı ${minRaise}` };
 
       const callAmount = this.currentBet - player.bet;
       const raiseAmount = amount;
@@ -220,28 +247,72 @@ class PokerEngine {
       return { error: 'Geçersiz aksiyon' };
     }
 
+    if (player.allin && this._allPlayersAllInOrFolded()) {
+      return this._fastForwardToShowdown(logMsg);
+    }
+
+    // Check if betting round is over
     if (this._isBettingRoundOver()) {
-      const advanceResult = this.advanceStage();
-      if (advanceResult) {
-        advanceResult.log = logMsg;
-        return advanceResult;
-      }
+      const result = this._handleRoundEnd(logMsg);
+      if (result) return result;
     }
 
-    // Sıradaki oyuncuya geç
+    // Move to next player
     this.turnIndex = this._findNextActivePlayerIndex(this.turnIndex);
-    const result = { log: logMsg };
-
     
-    if (this._allPlayersAllInOrFolded() && this.stage !== 'showdown') {
-      while (['flop','turn','river'].includes(this.stage)) {
-        const advanceResult = this.advanceStage();
-        if (advanceResult && advanceResult.reason === 'showdown') {
-          return advanceResult;
-        }
-      }
+    // Her playerAction sonucunda bet, chips ve allin değerlerini de döndür
+    return { 
+      log: logMsg,
+      bet: player.bet,
+      chips: player.chips, 
+      allin: player.allin,
+      bets: this.players.map(p => p.bet)
+    };
+  }
+
+  _handleRoundEnd(logMsg) {
+    // Check if everyone is all-in or folded (should go straight to showdown)
+    if (this._allPlayersAllInOrFolded()) {
+      return this._fastForwardToShowdown(logMsg);
     }
 
+    // Normal stage advancement
+    const result = this._advanceStage();
+    if (result) {
+      result.log = logMsg;
+      return result;
+    }
+
+    // Eğer advanceStage null döndürürse, en azından bets alanını döndür
+    return {
+      log: logMsg,
+      bets: this.players.map(p => p.bet),
+      chips: this.players.map(p => p.chips),
+      allins: this.players.map(p => p.allin)
+    };
+  }
+
+  _fastForwardToShowdown(logMsg) {
+    // Fast forward through all remaining stages to showdown
+    while (this.stage !== 'showdown') {
+      if (this.stage === 'prebet') {
+        this.stage = 'flop';
+        this._openBoard(3);
+      } else if (this.stage === 'flop') {
+        this.stage = 'turn';
+        this._openBoard(1);
+      } else if (this.stage === 'turn') {
+        this.stage = 'river';
+        this._openBoard(1);
+      } else if (this.stage === 'river') {
+        this.stage = 'showdown';
+        break;
+      }
+    }
+    
+    // Now we're at showdown
+    const result = this._showdownResult();
+    result.log = logMsg;
     return result;
   }
 
@@ -252,19 +323,11 @@ class PokerEngine {
     }
   }
 
-  advanceStage() {
-    this.players.forEach(p => { p.bet = 0; });
-    this.currentBet = 0;
-    this.lastRaise = 0;
-    this.lastAggressorIndex = null;
+  _advanceStage() {
+    // Reset for next betting round
+    this._resetPlayerBets();
 
-    // Son aksiyonu yapan oyuncunun indexi
-    let startIdx = this.turnIndex;
-    if (this.actionOrder.length > 0) {
-      startIdx = this.actionOrder[this.actionOrder.length - 1];
-    }
-    this.actionOrder = [];
-
+    // Advance stage and deal cards
     if (this.stage === 'prebet') {
       this.stage = 'flop';
       this._openBoard(3);
@@ -276,55 +339,50 @@ class PokerEngine {
       this._openBoard(1);
     } else if (this.stage === 'river') {
       this.stage = 'showdown';
-      const result = this._determineWinner();
-
-      
-      const showdownHands = this.players
-        .filter(p => !p.folded)
-        .map(p => ({ id: p.id, name: p.name, hand: p.hand }));
-
-      if (result.winner) {
-        this.players.find(p => p.id === result.winner).chips += this.pot;
-      }
-      const potWon = this.pot;
-      this.pot = 0;
-      return {
-        winner: result.winner,
-        pot: potWon,
-        board: this.board,
-        reason: "showdown",
-        showdownHands
-      };
-      
+      const result = this._showdownResult();
+      // Showdown sonucuna bets alanını ekle
+      result.bets = this.players.map(p => p.bet);
+      result.chips = this.players.map(p => p.chips);
+      result.allins = this.players.map(p => p.allin);
+      return result;
     }
 
-    if (this._allPlayersAllInOrFolded() && ['flop','turn','river'].includes(this.stage)) {
-  // Kalan tüm board kartlarını aç
-  if (this.stage === 'flop') this._openBoard(1); // turn
-  if (this.stage === 'turn') this._openBoard(1); // river
-  this.stage = 'showdown';
-  // Kazananı belirle
-  const result = this._determineWinner();
-  const showdownHands = this.players
-    .filter(p => !p.folded)
-    .map(p => ({ id: p.id, name: p.name, hand: p.hand }));
-  if (result.winner) {
-    this.players.find(p => p.id === result.winner).chips += this.pot;
+    // Set up next betting round - her zaman ilk aktif oyuncudan başla (p1 aktifse ondan)
+    this.turnIndex = this._findFirstActivePlayerIndex();
+
+    return {
+      stageAdvanced: true,
+      board: [...this.board],
+      stage: this.stage,
+      bets: this.players.map(p => p.bet),
+      chips: this.players.map(p => p.chips),
+      allins: this.players.map(p => p.allin)
+    };
   }
-  const potWon = this.pot;
-  this.pot = 0;
-  return {
-    winner: result.winner,
-    pot: potWon,
-    board: this.board,
-    reason: "showdown",
-    showdownHands
-  };
-}
 
-    this.turnIndex = this._findNextActivePlayerIndex(startIdx);
+  _showdownResult() {
+    const result = this._determineWinner();
+    const showdownHands = this.players
+      .filter(p => !p.folded)
+      .map(p => ({ id: p.id, name: p.name, hand: p.hand }));
 
-    return { stageAdvanced: true, board: this.board, stage: this.stage };
+    if (result.winner) {
+      this.players.find(p => p.id === result.winner).chips += this.pot;
+    }
+    const potWon = this.pot;
+    this.pot = 0;
+
+    return {
+      winner: result.winner,
+      pot: potWon,
+      board: [...this.board],
+      reason: "showdown",
+      showdownHands,
+      handEnded: true,
+      bets: this.players.map(p => p.bet),
+      chips: this.players.map(p => p.chips),
+      allins: this.players.map(p => p.allin)
+    };
   }
 
   _determineWinner() {
@@ -351,16 +409,23 @@ class PokerEngine {
   _compareHands(hand1, hand2) {
     if (hand1.rank !== hand2.rank) return hand1.rank - hand2.rank;
     if (hand1.high !== hand2.high) return hand1.high - hand2.high;
-    return 0; // Basitleştirilmiş
+    return 0;
   }
 
   _allPlayersAllInOrFolded() {
-  const active = this.players.filter(p => !p.folded);
-  // 1 kişi kaldıysa zaten oyun bitmiş olur.
-  if (active.length <= 1) return true;
-  return active.every(p => p.allin);
-}
+     const active = this.players.filter(p => !p.folded);
+     if (active.length <= 1) return true;
 
+    const canActPlayers = active.filter(p => !p.allin && p.chips > 0);
+
+
+     if (active.length === 2) {
+       return canActPlayers.length === 0;
+     }
+
+    // Üç veya daha fazla oyuncu varsa, all‑in tek başına showdown tetiklemesin
+     return false;
+   }
 
   getGameState(forId = null) {
     return {
@@ -379,6 +444,7 @@ class PokerEngine {
       currentBet: this.currentBet,
       lastRaise: this.lastRaise,
       currentPlayer: this.players[this.turnIndex]?.id,
+      handCount: this.handCount
     };
   }
 }
